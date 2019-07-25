@@ -102,28 +102,104 @@ typedef void(^ProjectBrowserReloadCompletionHandler)(NSArray *projectBrowserItem
 }
 
 - (void)performReloadWithCompletionHandler:(ProjectBrowserReloadCompletionHandler)completionHandler {
-  NSParameterAssert(completionHandler);
-  NSAssert(self.projectDirectoryURL != nil, @"");
-  
-  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-    NSDirectoryEnumerator *enumerator = [self newSimulatorDirectoryEnumerator];
-    
-    NSDictionary *metadataByStorePath;
-    NSDictionary *modelByModelPath;
-    
-    [enumerator getMetadataByStorePath:&metadataByStorePath modelByModelPath:&modelByModelPath];
-    
-    NSArray *items = [self compatibleProjectBrowserItemsWithMetadataByStorePath:metadataByStorePath modelByModelPath:modelByModelPath];
-    
-    double delayInSeconds = 1.0;
-    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
-    dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
-      completionHandler(items);
+    NSParameterAssert(completionHandler);
+    NSAssert(self.projectDirectoryURL != nil, @"");
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSMutableArray<CDEProjectBrowserItem*> *items = [NSMutableArray new];
+
+        NSURL* url = [NSURL fileURLWithPath: [@"~/Library/Developer/CoreSimulator/Devices/" stringByExpandingTildeInPath]];
+        NSArray<NSURL *>* contents = [[NSFileManager defaultManager] contentsOfDirectoryAtURL :url
+                                                                    includingPropertiesForKeys: @[NSURLIsDirectoryKey]
+                                                                                       options: NSDirectoryEnumerationSkipsHiddenFiles | NSDirectoryEnumerationSkipsSubdirectoryDescendants
+                                                                                         error: nil];
+
+        [contents enumerateObjectsUsingBlock:^(NSURL * _Nonnull deviceURL, NSUInteger idx, BOOL * _Nonnull stop) {
+            NSMutableDictionary<NSString*, NSDictionary*>* modelByApp = [NSMutableDictionary new];
+
+            // Load modeldata from Application bundle
+            NSURL* applicationsURL = [deviceURL URLByAppendingPathComponent: @"data/Containers/Bundle/Application"];
+
+            NSArray<NSURL *>* applications = [[NSFileManager defaultManager] contentsOfDirectoryAtURL: applicationsURL
+                                                                           includingPropertiesForKeys: @[NSURLIsDirectoryKey]
+                                                                                              options: NSDirectoryEnumerationSkipsHiddenFiles | NSDirectoryEnumerationSkipsSubdirectoryDescendants
+                                                                                                error: nil];
+
+            [applications enumerateObjectsUsingBlock:^(NSURL * _Nonnull applicationURL, NSUInteger idx, BOOL * _Nonnull stop) {
+                NSURL* metadataURL = [applicationURL URLByAppendingPathComponent: @".com.apple.mobile_container_manager.metadata.plist"];
+                NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfURL: metadataURL];
+                NSString* identifer = (NSString *)metadata[@"MCMMetadataIdentifier"];
+
+
+                NSDirectoryEnumerator *enumerator = [[NSFileManager defaultManager] enumeratorAtURL: applicationURL
+                                                                         includingPropertiesForKeys: nil
+                                                                                            options: NSDirectoryEnumerationSkipsHiddenFiles
+                                                                                       errorHandler: nil];
+                NSDictionary *modelByModelPath;
+                [enumerator getModeldata: &modelByModelPath];
+
+                modelByApp[identifer] = modelByModelPath;
+            }];
+
+            // Load metadata from Application Sandbox
+            NSURL* applicationsDataURL = [deviceURL URLByAppendingPathComponent: @"data/Containers/Data/Application"];
+            NSArray<NSURL *>* applicationsData = [[NSFileManager defaultManager] contentsOfDirectoryAtURL: applicationsDataURL
+                                                                               includingPropertiesForKeys: @[NSURLIsDirectoryKey]
+                                                                                                  options: NSDirectoryEnumerationSkipsHiddenFiles | NSDirectoryEnumerationSkipsSubdirectoryDescendants
+                                                                                                    error: nil];
+
+            [applicationsData enumerateObjectsUsingBlock:^(NSURL * _Nonnull applicationDataURL, NSUInteger idx, BOOL * _Nonnull stop) {
+                NSURL* metadataURL = [applicationDataURL URLByAppendingPathComponent: @".com.apple.mobile_container_manager.metadata.plist"];
+                NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfURL: metadataURL];
+                NSString* dataIdentifier = (NSString *)metadata[@"MCMMetadataIdentifier"];
+
+                NSDictionary* modelByModelPath = modelByApp[dataIdentifier];
+
+                if (modelByModelPath != nil) {
+                    NSDirectoryEnumerator *enumerator = [[NSFileManager defaultManager] enumeratorAtURL: applicationDataURL
+                                                                             includingPropertiesForKeys: nil
+                                                                                                options: NSDirectoryEnumerationSkipsHiddenFiles
+                                                                                           errorHandler: nil];
+
+                    NSDictionary *metadataByStorePath;
+                    [enumerator getMetadata: &metadataByStorePath];
+
+                    NSArray *projectBrowserItems = [self compatibleProjectBrowserItemsWithMetadataByStorePath: metadataByStorePath modelByModelPath: modelByModelPath];
+
+                    [items addObjectsFromArray: projectBrowserItems];
+                }
+            }];
+        }];
+
+        double delayInSeconds = 1.0;
+        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
+        dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
+            completionHandler(items);
+        });
     });
-  });
 }
 
-
+//- (void)performReloadWithCompletionHandler:(ProjectBrowserReloadCompletionHandler)completionHandler {
+//  NSParameterAssert(completionHandler);
+//  NSAssert(self.projectDirectoryURL != nil, @"");
+//
+//  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+//    NSDirectoryEnumerator *enumerator = [self newSimulatorDirectoryEnumerator];
+//
+//    NSDictionary *metadataByStorePath;
+//    NSDictionary *modelByModelPath;
+//
+//    [enumerator getMetadataByStorePath:&metadataByStorePath modelByModelPath:&modelByModelPath];
+//
+//    NSArray *items = [self compatibleProjectBrowserItemsWithMetadataByStorePath:metadataByStorePath modelByModelPath:modelByModelPath];
+//
+//    double delayInSeconds = 1.0;
+//    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
+//    dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
+//      completionHandler(items);
+//    });
+//  });
+//}
 
 - (NSArray<CDEProjectBrowserItem*> *)compatibleProjectBrowserItemsWithMetadataByStorePath:(NSDictionary<NSString*, NSDictionary*> *)metadataByStorePath modelByModelPath:(NSDictionary<NSString*, NSManagedObjectModel*>*)modelByModelPath {
   NSMutableArray<CDEProjectBrowserItem*> *items = [NSMutableArray new];

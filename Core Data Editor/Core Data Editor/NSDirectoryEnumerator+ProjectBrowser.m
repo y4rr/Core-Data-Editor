@@ -67,10 +67,53 @@
 
 @implementation NSDirectoryEnumerator (ProjectBrowser)
 
+- (void)getModeldata:(NSDictionary<NSString*, NSManagedObjectModel*> **)outModelByModelPath {
+    NSMutableDictionary *modelByModelPath = [NSMutableDictionary new];
+
+    for (NSURL *URL in self) {
+        // Is URL a managed object model file?
+        NSManagedObjectModel *model = [URL transformedManagedObjectModel];
+        if (model != nil) { // YES
+            modelByModelPath[URL.path] = model;
+            break;
+        }
+    }
+
+    if (outModelByModelPath != NULL) {
+        *outModelByModelPath = modelByModelPath;
+    }
+}
+
+- (void)getMetadata:(NSDictionary<NSString*, NSDictionary*> **)outMetadataByStorePath {
+    NSMutableDictionary *metadataByStorePath = [NSMutableDictionary new];
+
+    for(NSURL *URL in self) {
+        if ([URL isPublicDataFile_cde] == NO) {
+            continue;
+        }
+
+        if ([URL isSQLiteURL_cde] == NO) {
+            continue;
+        }
+
+        NSDictionary *metadata = [URL persistentStoreMetadata];
+        if(metadata == nil) {
+            continue;
+        }
+
+        metadataByStorePath[URL.path] = metadata;
+        break;
+    }
+
+    if (outMetadataByStorePath != NULL) {
+        *outMetadataByStorePath = metadataByStorePath;
+    }
+}
+
 - (void)getMetadataByStorePath:(NSDictionary<NSString*, NSDictionary*> **)outMetadataByStorePath modelByModelPath:(NSDictionary<NSString*, NSManagedObjectModel*> **)outModelByModelPath {
   NSMutableDictionary *metadataByStorePath = [NSMutableDictionary new];
   NSMutableDictionary *modelByModelPath = [NSMutableDictionary new];
-  
+
   for(NSURL *URL in self) {
     // Is URL a managed object model file?
     NSManagedObjectModel *model = [URL transformedManagedObjectModel];
@@ -78,23 +121,23 @@
       modelByModelPath[URL.path] = model;
       continue;
     }
-    
+
     BOOL isData = [URL isPublicDataFile_cde];
     if(isData == NO) {
       continue;
     }
-    
+
     if([URL isSQLiteURL_cde] == NO) {
       continue;
     }
-    
+
     NSDictionary *metadata = [URL persistentStoreMetadata];
     if(metadata == nil) {
       continue;
     }
     metadataByStorePath[URL.path] = metadata;
   }
-  
+
   if(outMetadataByStorePath != NULL) {
     *outMetadataByStorePath = metadataByStorePath;
   }
